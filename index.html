@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zeyrio Spend</title><meta name="theme-color" content="#121214"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" type="image/png" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#121214;--card:#1c1c21;--card2:#25252c;--tx:#f3f3f6;--mu:#8e8e9a;--ac:#a58bff;--ok:#4ade80;--wa:#fbbf24;--er:#f87171;--ln:#2e2e36;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:light){:root{--bg:#f4f3f8;--card:#fff;--card2:#ebe9f2;--tx:#1a1a22;--mu:#6b6b78;--ac:#6d4fe0;--ln:#dcdae6}}
+*{box-sizing:border-box;margin:0}
+html,body{background:var(--bg);color:var(--tx);font:15px/1.4 "Segoe UI",Roboto,system-ui,sans-serif}
+main{padding:16px 16px 150px;max-width:640px;margin:auto}
+h1{font-size:24px}h2{font-size:17px;margin:18px 0 8px}.mu{color:var(--mu);font-size:13px}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:10px}.sp{flex:1}
+button{font:inherit;color:inherit;border:0;border-radius:12px;background:var(--card2);padding:9px 14px;min-height:40px;cursor:pointer}
+button.p{background:var(--ac);color:#15101f;font-weight:600}button.d{color:var(--er)}button.s{padding:5px 10px;min-height:32px;font-size:13px}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ac)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--ln);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;border-radius:0;padding:12px 2px;font-size:12px;color:var(--mu)}nav button.on{color:var(--ac);font-weight:700}
+.fab{position:fixed;right:18px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:28px;font-size:28px;padding:0}
+.bar{height:8px;background:var(--card2);border-radius:4px;overflow:hidden;margin:8px 0 4px}.bar i{display:block;height:100%;background:var(--ac)}
+.tabs{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}.tabs button.on{background:var(--ac);color:#15101f}
+input,select,textarea{font:inherit;color:inherit;background:var(--card2);border:1px solid var(--ln);border-radius:10px;padding:9px;width:100%}
+label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
+.sheet{position:fixed;inset:0;background:#000a;display:flex;align-items:flex-end;z-index:9}
+.sheet>div{background:var(--card);width:100%;max-width:640px;margin:auto;border-radius:20px 20px 0 0;padding:18px;max-height:92%;overflow:auto}
+.dot{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:6px}
+.big{font-size:30px;font-weight:700}.in{color:var(--ok)}.out{color:var(--er)}
+.tx{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--ln);cursor:pointer}.tx:last-child{border:0}
+.days{display:flex;align-items:flex-end;gap:2px;height:64px}.days i{flex:1;background:var(--ac);border-radius:2px 2px 0 0;min-height:2px}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(140px + env(safe-area-inset-bottom,0px));background:var(--ac);color:#15101f;padding:12px;border-radius:12px;display:none;z-index:12;font-weight:600}
+</style></head><body><main id="app"></main><div id="toast"></div><div id="sheet"></div><div id="dlg"></div>
+<nav id="nav"></nav><button class="p fab" id="fab" aria-label="Add entry" onclick="txForm()">+</button>
+<script>
+const $=s=>document.querySelector(s);
+const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const P=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const PAL=['#a58bff','#4ade80','#fbbf24','#f87171','#38bdf8','#f472b6','#fb923c','#2dd4bf'];
+const DEF={v:1,tx:[],rec:[],bud:{},set:{cur:'$'},cats:['Food','Transport','Bills','Rent','Shopping','Health','Fun','Other'].map((n,i)=>({n,c:PAL[i]}))};
+let S;try{S=Object.assign({},DEF,JSON.parse(localStorage.getItem('zspend')||'{}'))}catch(e){S=structuredClone(DEF)}
+const save=()=>{try{localStorage.setItem('zspend',JSON.stringify(S))}catch(e){toast('Could not save: storage is full or blocked')}};
+let tab='home',hm=iso(new Date()).slice(0,7),q='',ft='all',fc='',ty='e';
+const fm=n=>(n<0?'-':'')+S.set.cur+Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+const col=c=>c==='Income'?'var(--ok)':(S.cats.find(x=>x.n===c)||{c:'#8e8e9a'}).c;
+const mt=m=>S.tx.filter(x=>x.date.startsWith(m));
+const sum=(L,t)=>L.filter(x=>x.type===t).reduce((a,x)=>a+x.amt,0);
+const shift=k=>{const[y,m]=hm.split('-').map(Number);return iso(new Date(y,m-1+k,1)).slice(0,7)};
+const mname=m=>P(m+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2600)}
+function ask(m,cb,ok){$('#dlg').innerHTML=`<div class="sheet" style="z-index:11;align-items:center;padding:20px"><div style="border-radius:20px;max-width:360px"><p>${esc(m)}</p><div class="row" style="margin-top:16px"><button id="dn">Cancel</button><div class="sp"></div><button class="p" id="dy">${ok||'Delete'}</button></div></div></div>`;
+ $('#dn').onclick=()=>$('#dlg').innerHTML='';$('#dy').onclick=()=>{$('#dlg').innerHTML='';cb()}}
+const sheet=h=>$('#sheet').innerHTML=`<div class="sheet" onclick="if(event.target===this)closeS()"><div>${h}</div></div>`;
+const closeS=()=>$('#sheet').innerHTML='';
+function recDate(r,k){const s=P(r.start);if(r.freq==='weekly')return iso(new Date(s.getFullYear(),s.getMonth(),s.getDate()+7*k));const y=s.getFullYear(),m=s.getMonth()+k;return iso(new Date(y,m,Math.min(s.getDate(),new Date(y,m+1,0).getDate())))}
+function genRec(){let ch=false;const n=iso(new Date());for(const r of S.rec){let g=0;while(g++<400){const d=recDate(r,r.n);if(d>n)break;S.tx.push({id:uid(),type:r.type,amt:r.amt,cat:r.cat,date:d,note:r.note,rid:r.id});r.n++;ch=true}}if(ch)save()}
+function setTy(t){ty=t;$('#ty_e').className=t==='e'?'on':'';$('#ty_i').className=t==='i'?'on':'';$('#x_cw').style.display=t==='i'?'none':'block'}
+function catSel(v,id){return`<select id="${id}">${S.cats.map(c=>`<option ${c.n===v?'selected':''}>${esc(c.n)}</option>`).join('')}</select>`}
+function txForm(id){const t=S.tx.find(x=>x.id===id)||{type:'e',amt:'',cat:S.cats[0]?S.cats[0].n:'Other',date:iso(new Date()),note:''};ty=t.type;
+ sheet(`<h2 style="margin-top:0">${id?'Edit entry':'New entry'}</h2><div class="tabs"><button id="ty_e" class="${ty==='e'?'on':''}" onclick="setTy('e')">Expense</button><button id="ty_i" class="${ty==='i'?'on':''}" onclick="setTy('i')">Income</button></div>
+ <label>Amount</label><input id="x_a" type="number" inputmode="decimal" step="0.01" min="0" value="${t.amt}" placeholder="0.00">
+ <div id="x_cw" style="display:${ty==='i'?'none':'block'}"><label>Category</label>${catSel(t.cat,'x_c')}</div>
+ <label>Date</label><input id="x_d" type="date" value="${t.date}"><label>Note</label><input id="x_n" value="${esc(t.note)}" placeholder="Optional">
+ <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button>${id?`<button class="d" onclick="delTx('${id}')">Delete</button>`:''}<div class="sp"></div><button class="p" onclick="saveTx('${id||''}')">Save</button></div>`);setTimeout(()=>!id&&$('#x_a').focus(),50)}
+function saveTx(id){const a=Math.round(parseFloat($('#x_a').value)*100)/100,d=$('#x_d').value;if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');
+ const t={id:id||uid(),type:ty,amt:a,cat:ty==='i'?'Income':$('#x_c').value,date:d,note:$('#x_n').value.trim()};
+ if(id)S.tx=S.tx.map(x=>x.id===id?{...x,...t}:x);else S.tx.push(t);save();closeS();if(d.slice(0,7)!==hm)hm=d.slice(0,7);render();toast('Saved')}
+function delTx(id){ask('Delete this entry?',()=>{S.tx=S.tx.filter(x=>x.id!==id);save();closeS();render();toast('Entry deleted')})}
+function budForm(c){const key=c==='_t'?'_t':c;sheet(`<h2 style="margin-top:0">${c==='_t'?'Monthly budget':esc(c)+' budget'}</h2><label>Amount per month (empty to remove)</label><input id="b_a" type="number" inputmode="decimal" min="0" value="${S.bud[key]||''}">
+ <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="saveBud('${key.replace(/'/g,"\\'")}')">Save</button></div>`)}
+function saveBud(k){const v=parseFloat($('#b_a').value);if(v>0)S.bud[k]=v;else delete S.bud[k];save();closeS();render()}
+function recForm(id){const r=S.rec.find(x=>x.id===id)||{type:'e',amt:'',cat:S.cats[0]?S.cats[0].n:'Other',note:'',freq:'monthly',start:iso(new Date())};ty=r.type;const lk=id?'disabled':'';
+ sheet(`<h2 style="margin-top:0">${id?'Edit recurring':'New recurring'}</h2><div class="tabs"><button id="ty_e" class="${ty==='e'?'on':''}" onclick="setTy('e')">Expense</button><button id="ty_i" class="${ty==='i'?'on':''}" onclick="setTy('i')">Income</button></div>
+ <label>Amount</label><input id="x_a" type="number" inputmode="decimal" step="0.01" value="${r.amt}"><div id="x_cw" style="display:${ty==='i'?'none':'block'}"><label>Category</label>${catSel(r.cat,'x_c')}</div>
+ <label>Name or note</label><input id="x_n" value="${esc(r.note)}" placeholder="Rent, Netflix, salary"><div class="row"><div class="sp"><label>Repeats</label><select id="x_f" ${lk}><option value="monthly" ${r.freq==='monthly'?'selected':''}>Monthly</option><option value="weekly" ${r.freq==='weekly'?'selected':''}>Weekly</option></select></div>
+ <div class="sp"><label>First date</label><input id="x_d" type="date" value="${r.start}" ${lk}></div></div>${id?'<div class="mu" style="margin-top:6px">Date and frequency are fixed. Delete and re-add to change them.</div>':''}
+ <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button>${id?`<button class="d" onclick="delRec('${id}')">Delete</button>`:''}<div class="sp"></div><button class="p" onclick="saveRec('${id||''}')">Save</button></div>`)}
+function saveRec(id){const a=Math.round(parseFloat($('#x_a').value)*100)/100,d=$('#x_d').value;if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a first date');
+ const v={type:ty,amt:a,cat:ty==='i'?'Income':$('#x_c').value,note:$('#x_n').value.trim()};
+ if(id)S.rec=S.rec.map(r=>r.id===id?{...r,...v}:r);else S.rec.push({id:uid(),...v,freq:$('#x_f').value,start:d,n:0});genRec();save();closeS();render();toast('Recurring saved')}
+function delRec(id){ask('Delete this recurring entry? Entries already added stay.',()=>{S.rec=S.rec.filter(r=>r.id!==id);save();closeS();render()})}
+function vHome(){const L=mt(hm),sp=sum(L,'e'),inc=sum(L,'i'),B=S.bud._t||0,cur=hm===iso(new Date()).slice(0,7),dim=new Date(+hm.slice(0,4),+hm.slice(5),0).getDate(),dl=dim-new Date().getDate()+1;
+ const pc=B?Math.min(100,sp/B*100):0,left=B-sp,days=Array.from({length:dim},(_,i)=>sum(L.filter(x=>+x.date.slice(8)===i+1),'e')),mx=Math.max(...days,1);
+ return`<div class="row"><h1 class="sp">${mname(hm)}</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=iso(new Date()).slice(0,7);render()">Now</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div>
+ <div class="card" style="margin-top:12px"><div class="mu">Spent</div><div class="big out">${fm(sp)}</div><div class="row mu" style="margin-top:6px"><span>Income <b class="in">${fm(inc)}</b></span><span class="sp"></span><span>Net <b>${fm(inc-sp)}</b></span></div></div>
+ <div class="card">${B?`<div class="row"><b class="sp">Budget ${fm(B)}</b><button class="s" onclick="budForm('_t')">Edit</button></div><div class="bar"><i style="width:${pc}%;background:${sp>B?'var(--er)':sp>B*.8?'var(--wa)':'var(--ac)'}"></i></div>
+ <div class="mu">${left>=0?fm(left)+' left':fm(-left)+' over budget'}${cur&&left>0?' · about '+fm(left/dl)+' per day':''}</div>`:`<div class="row"><span class="mu sp">Set a monthly budget to see what's left to spend.</span><button class="s p" onclick="budForm('_t')">Set budget</button></div>`}</div>
+ <div class="card"><div class="mu">Spending by day</div><div class="days" style="margin-top:8px">${days.map((v,i)=>`<i style="height:${v/mx*100}%;${v?'':'opacity:.25'}" title="${i+1}"></i>`).join('')}</div></div>
+ <h2>Recent</h2>${txList(L.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6),'Nothing logged this month. Tap + to add your first entry.')}`}
+function txList(L,empty){return L.length?`<div class="card">${L.map(x=>`<div class="tx" onclick="txForm('${x.id}')"><span class="dot" style="background:${col(x.cat)}"></span><div class="sp"><b>${esc(x.note||x.cat)}</b><div class="mu">${esc(x.cat)} · ${P(x.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${x.rid?' · recurring':''}</div></div><b class="${x.type==='i'?'in':''}">${x.type==='i'?'+':'-'}${fm(x.amt)}</b></div>`).join('')}</div>`:`<div class="card mu" style="text-align:center;padding:26px">${empty}</div>`}
+function vHist(){let L=mt(hm).slice().sort((a,b)=>b.date.localeCompare(a.date));const s=q.toLowerCase();
+ L=L.filter(x=>(ft==='all'||x.type===ft)&&(!fc||x.cat===fc)&&(!s||(x.note+' '+x.cat).toLowerCase().includes(s)));
+ return`<div class="row"><h1 class="sp">History</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div><div class="mu">${mname(hm)}</div>
+ <input placeholder="Search notes or categories" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,250)" style="margin-top:10px">
+ <div class="tabs">${[['all','All'],['e','Expenses'],['i','Income']].map(([k,l])=>`<button class="${ft===k?'on':''}" onclick="ft='${k}';render()">${l}</button>`).join('')}</div>
+ <select onchange="fc=this.value;render()"><option value="">All categories</option>${S.cats.map(c=>`<option ${fc===c.n?'selected':''}>${esc(c.n)}</option>`).join('')}</select>
+ <div class="mu" style="margin:8px 0">${L.length} entries · ${fm(sum(L,'i')-sum(L,'e'))} net</div>${txList(L,'No entries match.')}`}
+function vIns(){const L=mt(hm),E=L.filter(x=>x.type==='e'),sp=sum(L,'e'),pv=sum(mt(shift(-1)),'e'),by={};E.forEach(x=>by[x.cat]=(by[x.cat]||0)+x.amt);
+ const rows=Object.entries(by).sort((a,b)=>b[1]-a[1]),cs=[...new Set([...rows.map(r=>r[0]),...Object.keys(S.bud).filter(k=>k!=='_t')])];
+ const R=cs.map(c=>[c,by[c]||0]).sort((a,b)=>b[1]-a[1]);
+ return`<div class="row"><h1 class="sp">Insights</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div><div class="mu">${mname(hm)}</div>
+ <div class="card" style="margin-top:10px"><div class="mu">vs last month</div><b>${fm(sp)}</b> <span class="mu">this month · ${fm(pv)} last month</span><div class="${pv&&sp>pv?'out':'in'}">${pv?(sp>pv?'▲ ':'▼ ')+Math.abs(Math.round((sp-pv)/pv*100))+'% '+(sp>pv?'more':'less'):'No data for last month'}</div></div>
+ <h2>By category</h2>${R.length?`<div class="card">${R.map(([c,v])=>{const b=S.bud[c],m=Math.max(v,b||0,1);return`<div style="padding:7px 0" onclick="budForm('${c.replace(/'/g,"\\'")}')"><div class="row"><span class="dot" style="background:${col(c)}"></span><b class="sp">${esc(c)}</b><span>${fm(v)}</span></div><div class="bar"><i style="width:${v/m*100}%;background:${b&&v>b?'var(--er)':b&&v>b*.8?'var(--wa)':col(c)}"></i></div><div class="mu">${b?'Budget '+fm(b)+(v>b?' · over by '+fm(v-b):' · '+fm(b-v)+' left'):'Tap to set a budget'}</div></div>`}).join('')}</div>`:'<div class="card mu" style="text-align:center;padding:26px">No spending yet this month.</div>'}
+ <h2>Biggest expenses</h2>${txList(E.slice().sort((a,b)=>b.amt-a.amt).slice(0,3),'Nothing yet.')}`}
+function vRec(){return`<h1>Recurring</h1><div class="mu" style="margin:4px 0 10px">Rent, subscriptions, salary. They're added automatically each time they're due, when you open the app.</div>
+ ${S.rec.length?S.rec.map(r=>`<div class="card"><div class="row"><div class="sp"><b>${esc(r.note||r.cat)}</b><div class="mu">${r.freq==='weekly'?'Weekly':'Monthly'} · from ${r.start} · next ${recDate(r,r.n)}</div></div><b class="${r.type==='i'?'in':''}">${r.type==='i'?'+':'-'}${fm(r.amt)}</b><button class="s" onclick="recForm('${r.id}')">Edit</button></div></div>`).join('')+`<div class="card"><div class="mu">Monthly subscriptions and bills total</div><b>${fm(S.rec.filter(r=>r.type==='e').reduce((a,r)=>a+r.amt*(r.freq==='weekly'?52/12:1),0))}</b></div>`:'<div class="card mu" style="text-align:center;padding:26px">Nothing recurring yet.</div>'}
+ <button class="p" onclick="recForm()">Add recurring entry</button>`}
+function vSet(){return`<h1>Settings</h1><div class="card"><label>Currency symbol</label><input value="${esc(S.set.cur)}" maxlength="4" onchange="S.set.cur=this.value.trim()||'$';save()"></div>
+ <div class="card"><b>Categories</b><div style="margin:8px 0">${S.cats.map((c,i)=>`<div class="row" style="padding:4px 0"><span class="dot" style="background:${c.c}"></span><span class="sp">${esc(c.n)}</span><button class="s d" onclick="catDel(${i})">Remove</button></div>`).join('')}</div>
+ <div class="row"><input id="nc" placeholder="New category"><button onclick="catAdd()">Add</button></div></div>
+ <div class="card"><b>Your data</b><div class="mu" style="margin:6px 0 10px">Stored on this device only. Copy a backup somewhere safe now and then.</div><div class="row" style="flex-wrap:wrap"><button onclick="showText('Backup',JSON.stringify(S))">Backup</button><button onclick="showText('CSV for spreadsheets',csv())">Export CSV</button><button onclick="impForm()">Restore</button><button class="d" onclick="rst()">Reset all</button></div></div><div class="mu">Zeyrio Spend v1.0</div>`}
+function catAdd(){const v=$('#nc').value.trim();if(!v||S.cats.some(c=>c.n.toLowerCase()===v.toLowerCase()))return toast('Enter a new category name');S.cats.push({n:v,c:PAL[S.cats.length%PAL.length]});save();render()}
+function catDel(i){if(S.cats.length<2)return toast('Keep at least one category');ask('Remove "'+S.cats[i].n+'"? Past entries keep their label.',()=>{S.cats.splice(i,1);save();render()},'Remove')}
+function csv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"';return['date,type,category,amount,note',...S.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(x=>[x.date,x.type==='i'?'income':'expense',q(x.cat),x.amt,q(x.note)].join(','))].join('\n')}
+function showText(t,v){sheet(`<h2 style="margin-top:0">${t}</h2><div class="mu">Tap the box, select all, and copy.</div><textarea id="tt" rows="8" readonly style="margin-top:8px">${esc(v)}</textarea><div class="row" style="margin-top:12px"><button class="p" onclick="$('#tt').select();document.execCommand('copy');toast('Copied')">Copy</button><div class="sp"></div><button onclick="closeS()">Close</button></div>`)}
+function impForm(){sheet(`<h2 style="margin-top:0">Restore backup</h2><div class="mu">Paste a backup you copied earlier.</div><textarea id="ti" rows="8" style="margin-top:8px"></textarea><div class="row" style="margin-top:12px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="doImp()">Restore</button></div>`)}
+function doImp(){try{const j=JSON.parse($('#ti').value);if(j.v!==1||!Array.isArray(j.tx)||!Array.isArray(j.cats)||!j.bud||!j.set)throw 0;
+ ask('Replace current data with this backup ('+j.tx.length+' entries)?',()=>{S=Object.assign({},DEF,j);save();closeS();render();toast('Backup restored')},'Restore')}catch(e){toast('That is not a valid backup')}}
+function rst(){ask('Erase all entries, budgets and recurring items? This cannot be undone.',()=>{S=structuredClone(DEF);save();render();toast('All data erased')},'Erase everything')}
+function render(){const y=window.scrollY,k=render.t===tab;render.t=tab;
+ $('#nav').innerHTML=[['home','Home'],['hist','History'],['ins','Insights'],['rec','Recurring'],['set','Settings']].map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
+ $('#fab').style.display=tab==='set'||tab==='rec'?'none':'block';
+ $('#app').innerHTML={home:vHome,hist:vHist,ins:vIns,rec:vRec,set:vSet}[tab]();window.scrollTo(0,k?y:0);
+ if(tab==='hist'&&q){const i=document.querySelector('input[placeholder^=Search]');i.focus();i.setSelectionRange(q.length,q.length)}}
+genRec();render();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
