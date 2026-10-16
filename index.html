@@ -37,11 +37,12 @@ const P=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9);
 const PAL=['#a58bff','#4ade80','#fbbf24','#f87171','#38bdf8','#f472b6','#fb923c','#2dd4bf'];
-const DEF={v:1,tx:[],rec:[],bud:{},set:{cur:'$'},cats:['Food','Transport','Bills','Rent','Shopping','Health','Fun','Other'].map((n,i)=>({n,c:PAL[i]}))};
-let S;try{S=Object.assign({},DEF,JSON.parse(localStorage.getItem('zspend')||'{}'))}catch(e){S=structuredClone(DEF)}
+const DEF={v:1,tx:[],rec:[],loans:[],bud:{},set:{cur:'$'},cats:['Food','Transport','Bills','Rent','Shopping','Health','Fun','Other'].map((n,i)=>({n,c:PAL[i]}))};
+let S;
 function migBud(o){const b=structuredClone(o.bud||{}),leg={};let has=false;for(const k of Object.keys(b))if(typeof b[k]==='number'){leg[k]=b[k];delete b[k];has=true}
  if(has){const m=iso(new Date()).slice(0,7);b[m]=Object.assign(leg,b[m]||{})}o.bud=b;return o}
-migBud(S);
+const norm=o=>migBud(structuredClone(Object.assign({},DEF,o)));
+try{S=norm(JSON.parse(localStorage.getItem('zspend')||'{}'))}catch(e){S=norm({})}
 const save=()=>{try{localStorage.setItem('zspend',JSON.stringify(S))}catch(e){toast('Could not save: storage is full or blocked')}};
 let tab='home',hm=iso(new Date()).slice(0,7),q='',ft='all',fc='',ty='e';
 const fm=n=>(n<0?'-':'')+S.set.cur+Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
@@ -87,12 +88,12 @@ function saveRec(id){const a=Math.round(parseFloat($('#x_a').value)*100)/100,d=$
  if(id)S.rec=S.rec.map(r=>r.id===id?{...r,...v}:r);else S.rec.push({id:uid(),...v,freq:$('#x_f').value,start:d,n:0});genRec();save();closeS();render();toast('Recurring saved')}
 function delRec(id){ask('Delete this recurring entry? Entries already added stay.',()=>{S.rec=S.rec.filter(r=>r.id!==id);save();closeS();render()})}
 function vHome(){const L=mt(hm),sp=sum(L,'e'),inc=sum(L,'i'),B=bm()._t||0,cur=hm===iso(new Date()).slice(0,7),dim=new Date(+hm.slice(0,4),+hm.slice(5),0).getDate(),dl=dim-new Date().getDate()+1;
- const pc=B?Math.min(100,sp/B*100):0,left=B-sp,co=B?carry(hm):0,tot=B+co,rem=tot-sp;
+ const pc=B?Math.min(100,sp/B*100):0,left=B-sp,co=B?carry(hm):0,lo=cur?owed('l'):0,bo=cur?owed('b'):0,tot=r2(B+co-lo+bo),rem=tot-sp;
  return`<div class="row"><h1 class="sp">${mname(hm)}</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=iso(new Date()).slice(0,7);render()">Now</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div>
  <div class="card" style="margin-top:12px"><div class="mu">Spent</div><div class="big out">${fm(sp)}</div><div class="row mu" style="margin-top:6px"><span>Income <b class="in">${fm(inc)}</b></span><span class="sp"></span><span>Net <b>${fm(inc-sp)}</b></span></div></div>
  <div class="card">${B?`<div class="row"><b class="sp">Budget ${fm(B)}</b><button class="s" onclick="budForm('_t')">Edit</button></div><div class="bar"><i style="width:${pc}%;background:${sp>B?'var(--er)':sp>B*.8?'var(--wa)':'var(--ac)'}"></i></div>
- <div class="mu">${left>=0?fm(left)+' left':fm(-left)+' over budget'}${cur&&left>0?' · about '+fm(left/dl)+' per day':''}</div>`:`<div class="row"><span class="mu sp">Set a budget for ${mname(hm)} to see what's left to spend.</span><button class="s p" onclick="budForm('_t')">Set budget</button></div>`}</div>
- ${B?`<div class="card"><div class="row mu"><span>This month's budget</span><span class="sp"></span><b style="color:var(--tx)">${fm(B)}</b></div><div class="row mu" style="margin-top:6px"><span>Carried over</span><span class="sp"></span><b class="${co<0?'out':co>0?'in':''}" style="${co?'':'color:var(--tx)'}">${co>0?'+':''}${fm(co)}</b></div><div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--ln)"><b class="sp">Total budget</b><b>${fm(tot)}</b></div><div class="mu" style="margin-top:12px">Left from total budget</div><div class="big ${rem<0?'out':'in'}">${fm(rem)}</div></div>`:''}
+ <div class="mu">${left>=0?fm(sp)+' of '+fm(B)+' spent':fm(-left)+' over budget'}</div>`:`<div class="row"><span class="mu sp">Set a budget for ${mname(hm)} to see what's left to spend.</span><button class="s p" onclick="budForm('_t')">Set budget</button></div>`}</div>
+ ${B?`<div class="card"><div class="row mu"><span>This month's budget</span><span class="sp"></span><b style="color:var(--tx)">${fm(B)}</b></div><div class="row mu" style="margin-top:6px"><span>Carried over</span><span class="sp"></span><b class="${co<0?'out':co>0?'in':''}" style="${co?'':'color:var(--tx)'}">${co>0?'+':''}${fm(co)}</b></div>${lo?`<div class="row mu" style="margin-top:6px"><span>Lent out, not repaid</span><span class="sp"></span><b class="out">-${fm(lo)}</b></div>`:''}${bo?`<div class="row mu" style="margin-top:6px"><span>Borrowed, not repaid</span><span class="sp"></span><b class="in">+${fm(bo)}</b></div>`:''}<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--ln)"><b class="sp">Total budget</b><b>${fm(tot)}</b></div><div class="mu" style="margin-top:12px">Left from total budget</div><div class="big ${rem<0?'out':'in'}">${fm(rem)}</div>${cur&&rem>0?`<div class="mu">about ${fm(rem/dl)} per day</div>`:''}</div>`:''}
  <h2>Recent</h2>${txList(L.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6),'Nothing logged this month. Tap + to add your first entry.')}`}
 function txList(L,empty){return L.length?`<div class="card">${L.map(x=>`<div class="tx" onclick="txForm('${x.id}')"><span class="dot" style="background:${col(x.cat)}"></span><div class="sp"><b>${esc(x.note||x.cat)}</b><div class="mu">${esc(x.cat)} · ${P(x.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}${x.rid?' · recurring':''}</div></div><b class="${x.type==='i'?'in':''}">${x.type==='i'?'+':'-'}${fm(x.amt)}</b></div>`).join('')}</div>`:`<div class="card mu" style="text-align:center;padding:26px">${empty}</div>`}
 function vHist(){let L=mt(hm).slice().sort((a,b)=>b.date.localeCompare(a.date));const s=q.toLowerCase();
@@ -115,19 +116,56 @@ function vRec(){return`<h1>Recurring</h1><div class="mu" style="margin:4px 0 10p
 function vSet(){return`<h1>Settings</h1><div class="card"><label>Currency symbol</label><input value="${esc(S.set.cur)}" maxlength="4" onchange="S.set.cur=this.value.trim()||'$';save()"></div>
  <div class="card"><b>Categories</b><div style="margin:8px 0">${S.cats.map((c,i)=>`<div class="row" style="padding:4px 0"><span class="dot" style="background:${c.c}"></span><span class="sp">${esc(c.n)}</span><button class="s d" onclick="catDel(${i})">Remove</button></div>`).join('')}</div>
  <div class="row"><input id="nc" placeholder="New category"><button onclick="catAdd()">Add</button></div></div>
- <div class="card"><b>Your data</b><div class="mu" style="margin:6px 0 10px">Stored on this device only. Copy a backup somewhere safe now and then.</div><div class="row" style="flex-wrap:wrap"><button onclick="showText('Backup',JSON.stringify(S))">Backup</button><button onclick="showText('CSV for spreadsheets',csv())">Export CSV</button><button onclick="impForm()">Restore</button><button class="d" onclick="rst()">Reset all</button></div></div><div class="mu">Zeyrio Spend v1.3</div>`}
+ <div class="card"><b>Your data</b><div class="mu" style="margin:6px 0 10px">Stored on this device only. Copy a backup somewhere safe now and then.</div><div class="row" style="flex-wrap:wrap"><button onclick="showText('Backup',JSON.stringify(S))">Backup</button><button onclick="showText('CSV for spreadsheets',csv())">Export CSV</button><button onclick="impForm()">Restore</button><button class="d" onclick="rst()">Reset all</button></div></div><div class="mu">Zeyrio Spend v1.5</div>`}
+let lt='l',lk='l';
+const r2=n=>Math.round(n*100)/100,paid=l=>r2(l.pay.reduce((a,p)=>a+p.amt,0)),bal=l=>r2(l.amt-paid(l)),isB=l=>l.k==='b';
+const owed=k=>r2(S.loans.filter(l=>(k==='b')===isB(l)&&bal(l)>0).reduce((a,l)=>a+bal(l),0));
+const sd=d=>P(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+function loanCard(l){const b=bal(l),pd=paid(l),open=b>0,bw=isB(l);
+ return`<div class="card" style="${open?'':'opacity:.7'}"><div class="row"><div class="sp"><b>${esc(l.who)}</b><div class="mu">${sd(l.date)}${l.note?' · '+esc(l.note):''}</div></div>${open?`<b class="${bw?'out':'in'}">${fm(b)}</b>`:'<span class="mu">Settled</span>'}</div>
+ <div class="bar"><i style="width:${Math.min(100,pd/l.amt*100)}%;background:var(--ok)"></i></div><div class="mu">${bw?'Borrowed':'Lent'} ${fm(l.amt)} · ${bw?'you repaid':'repaid'} ${fm(pd)}</div>
+ <div class="row" style="margin-top:10px"><button class="s ${open?'p':''}" onclick="payForm('${l.id}')">${open?'Add repayment':'Repayments'}</button><div class="sp"></div><button class="s" onclick="loanForm('${l.id}')">Edit</button></div></div>`}
+function vLend(){const bw=lt==='b',L=S.loans.filter(l=>isB(l)===bw),A=L.filter(l=>bal(l)>0),D=L.filter(l=>bal(l)<=0),tot=owed(lt),by={};
+ A.forEach(l=>{const k=l.who.trim().toLowerCase();(by[k]=by[k]||{n:l.who.trim(),v:0}).v+=bal(l)});const ps=Object.values(by).sort((a,b)=>b.v-a.v),c=bw?'out':'in';
+ const srt=X=>X.slice().sort((a,b)=>b.date.localeCompare(a.date));
+ return`<h1>Lending</h1><div class="mu" style="margin:4px 0">Loans are tracked separately and never count as spending.</div>
+ <div class="tabs"><button class="${bw?'':'on'}" onclick="lt='l';render()">Lent ${fm(owed('l'))}</button><button class="${bw?'on':''}" onclick="lt='b';render()">Borrowed ${fm(owed('b'))}</button></div>
+ <div class="card"><div class="mu">${bw?'You owe':'Others owe you'}</div>
+ ${ps.length?ps.map(p=>`<div class="tx" style="cursor:default"><span class="sp">${bw?'To':'From'} <b>${esc(p.n)}</b></span><b class="${c}">${fm(p.v)}</b></div>`).join(''):`<div class="mu" style="padding:10px 0">${bw?'You owe nobody right now.':'Nobody owes you right now.'}</div>`}
+ <div class="row" style="padding-top:10px;border-top:1px solid var(--ln)"><b class="sp">Total ${bw?'borrowed':'lent'}</b><b class="big ${c}" style="font-size:22px">${fm(tot)}</b></div></div>
+ <button class="p" onclick="loanForm('','${lt}')" style="width:100%;margin:8px 0">${bw?'Add borrowed money':'Add loan'}</button>
+ ${A.length?`<h2>Pending</h2>${srt(A).map(loanCard).join('')}`:''}
+ ${D.length?`<h2>Settled</h2>${srt(D).map(loanCard).join('')}`:''}`}
+function loanForm(id,k){const l=S.loans.find(x=>x.id===id)||{who:'',amt:'',date:iso(new Date()),note:''};lk=id?(isB(l)?'b':'l'):(k||'l');const bw=lk==='b',names=[...new Set(S.loans.filter(x=>isB(x)===bw).map(x=>x.who.trim()))];
+ sheet(`<h2 style="margin-top:0">${id?(bw?'Edit borrowed money':'Edit loan'):(bw?'Borrowed money':'New loan')}</h2><label>${bw?'Borrowed from':'Lent to'}</label><input id="l_w" list="l_names" value="${esc(l.who)}" placeholder="Name" autocomplete="off"><datalist id="l_names">${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+ <label>Amount</label><input id="l_a" type="number" inputmode="decimal" step="0.01" min="0" value="${l.amt}" placeholder="0.00"><label>Date</label><input id="l_d" type="date" value="${l.date}"><label>Note</label><input id="l_n" value="${esc(l.note)}" placeholder="Optional, e.g. cash or online">
+ <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button>${id?`<button class="d" onclick="delLoan('${id}')">Delete</button>`:''}<div class="sp"></div><button class="p" onclick="saveLoan('${id||''}')">Save</button></div>`);setTimeout(()=>!id&&$('#l_w').focus(),50)}
+function saveLoan(id){const w=$('#l_w').value.trim(),a=r2(parseFloat($('#l_a').value)),d=$('#l_d').value,n=$('#l_n').value.trim();
+ if(!w)return toast('Enter a name');if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');
+ if(id){const l=S.loans.find(x=>x.id===id);if(a<paid(l))return toast('Amount is less than already repaid ('+fm(paid(l))+')');Object.assign(l,{who:w,amt:a,date:d,note:n})}else{S.loans.push({id:uid(),k:lk,who:w,amt:a,date:d,note:n,pay:[]});lt=lk}
+ save();closeS();render();toast('Saved')}
+function delLoan(id){ask('Delete this entry and its repayments?',()=>{S.loans=S.loans.filter(x=>x.id!==id);save();closeS();render();toast('Deleted')})}
+function payForm(id){const l=S.loans.find(x=>x.id===id),b=bal(l),bw=isB(l);
+ sheet(`<h2 style="margin-top:0">${esc(l.who)}</h2><div class="mu">${bw?'Borrowed':'Lent'} ${fm(l.amt)} · balance ${fm(b)}</div>
+ ${b>0?`<label>${bw?'Amount you repaid':'Repayment amount'}</label><input id="p_a" type="number" inputmode="decimal" step="0.01" min="0" value="${b}"><label>Date</label><input id="p_d" type="date" value="${iso(new Date())}">`:'<div style="margin-top:10px">Fully repaid.</div>'}
+ ${l.pay.length?`<label>Repayments so far</label><div>${l.pay.slice().sort((x,y)=>y.date.localeCompare(x.date)).map(p=>`<div class="row" style="padding:5px 0"><span class="sp">${sd(p.date)} · <b>${fm(p.amt)}</b></span><button class="s d" onclick="delPay('${id}','${p.id}')">Remove</button></div>`).join('')}</div>`:''}
+ <div class="row" style="margin-top:14px"><button onclick="closeS()">Close</button><div class="sp"></div>${b>0?`<button class="p" onclick="savePay('${id}')">Save</button>`:''}</div>`)}
+function savePay(id){const l=S.loans.find(x=>x.id===id),a=r2(parseFloat($('#p_a').value)),d=$('#p_d').value;
+ if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');if(a>bal(l))return toast('More than the balance of '+fm(bal(l)));
+ l.pay.push({id:uid(),amt:a,date:d});save();closeS();render();toast(bal(l)<=0?'Fully repaid':'Repayment saved')}
+function delPay(id,pid){const l=S.loans.find(x=>x.id===id);l.pay=l.pay.filter(p=>p.id!==pid);save();payForm(id);render()}
 function catAdd(){const v=$('#nc').value.trim();if(!v||S.cats.some(c=>c.n.toLowerCase()===v.toLowerCase()))return toast('Enter a new category name');S.cats.push({n:v,c:PAL[S.cats.length%PAL.length]});save();render()}
 function catDel(i){if(S.cats.length<2)return toast('Keep at least one category');ask('Remove "'+S.cats[i].n+'"? Past entries keep their label.',()=>{S.cats.splice(i,1);save();render()},'Remove')}
 function csv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"';return['date,type,category,amount,note',...S.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(x=>[x.date,x.type==='i'?'income':'expense',q(x.cat),x.amt,q(x.note)].join(','))].join('\n')}
 function showText(t,v){sheet(`<h2 style="margin-top:0">${t}</h2><div class="mu">Tap the box, select all, and copy.</div><textarea id="tt" rows="8" readonly style="margin-top:8px">${esc(v)}</textarea><div class="row" style="margin-top:12px"><button class="p" onclick="$('#tt').select();document.execCommand('copy');toast('Copied')">Copy</button><div class="sp"></div><button onclick="closeS()">Close</button></div>`)}
 function impForm(){sheet(`<h2 style="margin-top:0">Restore backup</h2><div class="mu">Paste a backup you copied earlier.</div><textarea id="ti" rows="8" style="margin-top:8px"></textarea><div class="row" style="margin-top:12px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="doImp()">Restore</button></div>`)}
 function doImp(){try{const j=JSON.parse($('#ti').value);if(j.v!==1||!Array.isArray(j.tx)||!Array.isArray(j.cats)||!j.bud||!j.set)throw 0;
- ask('Replace current data with this backup ('+j.tx.length+' entries)?',()=>{S=migBud(Object.assign({},DEF,j));save();closeS();render();toast('Backup restored')},'Restore')}catch(e){toast('That is not a valid backup')}}
-function rst(){ask('Erase all entries, budgets and recurring items? This cannot be undone.',()=>{S=structuredClone(DEF);save();render();toast('All data erased')},'Erase everything')}
+ ask('Replace current data with this backup ('+j.tx.length+' entries)?',()=>{S=norm(j);save();closeS();render();toast('Backup restored')},'Restore')}catch(e){toast('That is not a valid backup')}}
+function rst(){ask('Erase all entries, budgets, loans and recurring items? This cannot be undone.',()=>{S=structuredClone(DEF);save();render();toast('All data erased')},'Erase everything')}
 function render(){const y=window.scrollY,k=render.t===tab;render.t=tab;
- $('#nav').innerHTML=[['home','Home'],['hist','History'],['ins','Insights'],['rec','Recurring'],['set','Settings']].map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
- $('#fab').style.display=tab==='set'||tab==='rec'?'none':'block';
- $('#app').innerHTML={home:vHome,hist:vHist,ins:vIns,rec:vRec,set:vSet}[tab]();window.scrollTo(0,k?y:0);
+ $('#nav').innerHTML=[['home','Home'],['hist','History'],['ins','Insights'],['rec','Recurring'],['lend','Lending'],['set','Settings']].map(([k,l])=>`<button class="${tab===k?'on':''}" onclick="tab='${k}';render()">${l}</button>`).join('');
+ $('#fab').style.display=tab==='set'||tab==='rec'||tab==='lend'?'none':'block';
+ $('#app').innerHTML={home:vHome,hist:vHist,ins:vIns,rec:vRec,lend:vLend,set:vSet}[tab]();window.scrollTo(0,k?y:0);
  if(tab==='hist'&&q){const i=document.querySelector('input[placeholder^=Search]');i.focus();i.setSelectionRange(q.length,q.length)}}
 genRec();render();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
