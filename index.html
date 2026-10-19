@@ -54,7 +54,9 @@ const mt=m=>S.tx.filter(x=>x.date.startsWith(m));
 const sum=(L,t)=>L.filter(x=>x.type===t).reduce((a,x)=>a+x.amt,0);
 const shift=k=>{const[y,m]=hm.split('-').map(Number);return iso(new Date(y,m-1+k,1)).slice(0,7)};
 const mname=m=>P(m+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'});
-function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2600)}
+function toast(m,undo){const t=$('#toast');if(undo)t.innerHTML=esc(m)+' <button onclick="doUndo()" style="margin-left:10px;background:#15101f;color:#fff;min-height:30px;padding:4px 12px;font-size:13px">Undo</button>';else t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',undo?7000:2600)}
+let U=null;const snap=()=>{try{U=JSON.stringify(S)}catch(e){U=null}};
+function doUndo(){if(!U)return;S=norm(JSON.parse(U));U=null;save();closeS();render();toast('Restored')}
 function ask(m,cb,ok){$('#dlg').innerHTML=`<div class="sheet" style="z-index:11;align-items:center;padding:20px"><div style="border-radius:20px;max-width:360px"><p>${esc(m)}</p><div class="row" style="margin-top:16px"><button id="dn">Cancel</button><div class="sp"></div><button class="p" id="dy">${ok||'Delete'}</button></div></div></div>`;
  $('#dn').onclick=()=>$('#dlg').innerHTML='';$('#dy').onclick=()=>{$('#dlg').innerHTML='';cb()}}
 const sheet=h=>$('#sheet').innerHTML=`<div class="sheet" onclick="if(event.target===this)closeS()"><div>${h}</div></div>`;
@@ -73,7 +75,7 @@ function txForm(id){const t=S.tx.find(x=>x.id===id)||{type:'e',amt:'',cat:S.cats
 function saveTx(id){const a=Math.round(parseFloat($('#x_a').value)*100)/100,d=$('#x_d').value;if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');
  const t={id:id||uid(),type:ty,amt:a,cat:ty==='i'?'Income':$('#x_c').value,date:d,note:$('#x_n').value.trim()};
  if(id)S.tx=S.tx.map(x=>x.id===id?{...x,...t}:x);else S.tx.push(t);save();closeS();if(d.slice(0,7)!==hm)hm=d.slice(0,7);render();toast('Saved')}
-function delTx(id){ask('Delete this entry?',()=>{S.tx=S.tx.filter(x=>x.id!==id);save();closeS();render();toast('Entry deleted')})}
+function delTx(id){ask('Delete this entry?',()=>{snap();S.tx=S.tx.filter(x=>x.id!==id);save();closeS();render();toast('Entry deleted',1)})}
 function budForm(c){const key=c==='_t'?'_t':c;sheet(`<h2 style="margin-top:0">${c==='_t'?'Budget':esc(c)+' budget'} · ${mname(hm)}</h2><label>Amount for ${mname(hm)} only (empty to remove)</label><input id="b_a" type="number" inputmode="decimal" min="0" value="${bm()[key]||''}">
  <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="saveBud('${key.replace(/'/g,"\\'")}')">Save</button></div>`)}
 function saveBud(k){const v=parseFloat($('#b_a').value),b=S.bud[hm]||(S.bud[hm]={});if(v>0)b[k]=v;else delete b[k];if(!Object.keys(b).length)delete S.bud[hm];save();closeS();render()}
@@ -88,7 +90,7 @@ function saveRec(id){const a=Math.round(parseFloat($('#x_a').value)*100)/100,d=$
  if(id)S.rec=S.rec.map(r=>r.id===id?{...r,...v}:r);else S.rec.push({id:uid(),...v,freq:$('#x_f').value,start:d,n:0});genRec();save();closeS();render();toast('Recurring saved')}
 function delRec(id){ask('Delete this recurring entry? Entries already added stay.',()=>{S.rec=S.rec.filter(r=>r.id!==id);save();closeS();render()})}
 function vHome(){const L=mt(hm),sp=sum(L,'e'),inc=sum(L,'i'),B=bm()._t||0,cur=hm===iso(new Date()).slice(0,7),dim=new Date(+hm.slice(0,4),+hm.slice(5),0).getDate(),dl=dim-new Date().getDate()+1;
- const pc=B?Math.min(100,sp/B*100):0,left=B-sp,co=B?carry(hm):0,lo=cur?owed('l'):0,bo=cur?owed('b'):0,sv=monthSaved(hm),T=tgtSum(hm),tot=r2(B+co+inc-lo+bo-sv),rem=tot-sp;
+ const co=B?carry(hm):0,lo=cur?owed('l'):0,bo=cur?owed('b'):0,sv=monthSaved(hm),T=tgtSum(hm),tot=r2(B+co+inc-lo+bo-sv),rem=tot-sp,pc=B?Math.min(100,sp/B*100):0,left=B-sp;
  const bd=bkDays(),nag=(S.tx.length||S.loans.length||S.sav.length)&&(bd===null||bd>=7);
  return`<div class="row"><h1 class="sp">${mname(hm)}</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=iso(new Date()).slice(0,7);render()">Now</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div>
  ${nag?`<div class="card" style="margin-top:12px"><b>Back up your data</b><div class="mu" style="margin:4px 0 10px">Last backup: ${bkTxt()}. Your data lives in this browser only.</div><div class="row"><button class="s p" onclick="dlBackup()">Download backup</button></div></div>`:''}
@@ -110,15 +112,18 @@ function vIns(){const L=mt(hm),E=L.filter(x=>x.type==='e'),sp=sum(L,'e'),pv=sum(
  const R=cs.map(c=>[c,by[c]||0]).sort((a,b)=>b[1]-a[1]);
  return`<div class="row"><h1 class="sp">Insights</h1><button class="s" onclick="hm=shift(-1);render()" aria-label="Previous month">‹</button><button class="s" onclick="hm=shift(1);render()" aria-label="Next month">›</button></div><div class="mu">${mname(hm)}</div>
  <div class="card" style="margin-top:10px"><div class="mu">vs last month</div><b>${fm(sp)}</b> <span class="mu">this month · ${fm(pv)} last month</span><div class="${pv&&sp>pv?'out':'in'}">${pv?(sp>pv?'▲ ':'▼ ')+Math.abs(Math.round((sp-pv)/pv*100))+'% '+(sp>pv?'more':'less'):'No data for last month'}</div></div>
+ ${(()=>{const ms=[];let k=hm;for(let i=0;i<6;i++){ms.unshift(k);k=pm(k)}const vs=ms.map(m=>sum(mt(m),'e')),mx=Math.max(...vs,1),sh=v=>v>=1000?(v/1000).toFixed(1).replace('.0','')+'k':String(Math.round(v));
+ return`<div class="card"><div class="mu">Spending, last 6 months</div><div style="display:flex;gap:8px;align-items:flex-end;height:120px;margin-top:10px">${ms.map((m,i)=>`<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer" onclick="hm='${m}';render()"><span style="font-size:11px;color:var(--mu);margin-bottom:3px">${vs[i]?sh(vs[i]):''}</span><div style="width:100%;border-radius:4px 4px 0 0;background:var(--ac);opacity:${m===hm?1:.4};height:${Math.max(vs[i]/mx*84,2)}px"></div></div>`).join('')}</div>
+ <div style="display:flex;gap:8px;margin-top:6px">${ms.map(m=>`<span class="mu" style="flex:1;text-align:center;font-size:11px;${m===hm?'color:var(--tx);font-weight:700':''}">${P(m+'-01').toLocaleDateString(undefined,{month:'short'})}</span>`).join('')}</div></div>`})()}
  <h2>By category</h2>${R.length?`<div class="card">${R.map(([c,v])=>{const b=bm()[c],m=Math.max(v,b||0,1);return`<div style="padding:7px 0" onclick="budForm('${c.replace(/'/g,"\\'")}')"><div class="row"><span class="dot" style="background:${col(c)}"></span><b class="sp">${esc(c)}</b><span>${fm(v)}</span></div><div class="bar"><i style="width:${v/m*100}%;background:${b&&v>b?'var(--er)':b&&v>b*.8?'var(--wa)':col(c)}"></i></div><div class="mu">${b?'Budget '+fm(b)+(v>b?' · over by '+fm(v-b):' · '+fm(b-v)+' left'):'Tap to set a budget'}</div></div>`}).join('')}</div>`:'<div class="card mu" style="text-align:center;padding:26px">No spending yet this month.</div>'}
  <h2>Biggest expenses</h2>${txList(E.slice().sort((a,b)=>b.amt-a.amt).slice(0,3),'Nothing yet.')}`}
 function vRec(){return`<h1>Recurring</h1><div class="mu" style="margin:4px 0 10px">Rent, subscriptions, salary. They're added automatically each time they're due, when you open the app.</div>
  ${S.rec.length?S.rec.map(r=>`<div class="card"><div class="row"><div class="sp"><b>${esc(r.note||r.cat)}</b><div class="mu">${r.freq==='weekly'?'Weekly':'Monthly'} · from ${r.start} · next ${recDate(r,r.n)}</div></div><b class="${r.type==='i'?'in':''}">${r.type==='i'?'+':'-'}${fm(r.amt)}</b><button class="s" onclick="recForm('${r.id}')">Edit</button></div></div>`).join('')+`<div class="card"><div class="mu">Monthly subscriptions and bills total</div><b>${fm(S.rec.filter(r=>r.type==='e').reduce((a,r)=>a+r.amt*(r.freq==='weekly'?52/12:1),0))}</b></div>`:'<div class="card mu" style="text-align:center;padding:26px">Nothing recurring yet.</div>'}
  <button class="p" onclick="recForm()">Add recurring entry</button>`}
 function vSet(){return`<h1>Settings</h1><div class="card"><label>Currency symbol</label><input value="${esc(S.set.cur)}" maxlength="4" onchange="S.set.cur=this.value.trim()||'$';save()"></div>
- <div class="card"><b>Categories</b><div style="margin:8px 0">${S.cats.map((c,i)=>`<div class="row" style="padding:4px 0"><span class="dot" style="background:${c.c}"></span><span class="sp">${esc(c.n)}</span><button class="s d" onclick="catDel(${i})">Remove</button></div>`).join('')}</div>
+ <div class="card"><b>Categories</b><div style="margin:8px 0">${S.cats.map((c,i)=>`<div class="row" style="padding:4px 0"><span class="dot" style="background:${c.c}"></span><span class="sp">${esc(c.n)}</span><button class="s" onclick="catRen(${i})">Rename</button><button class="s d" onclick="catDel(${i})">Remove</button></div>`).join('')}</div>
  <div class="row"><input id="nc" placeholder="New category"><button onclick="catAdd()">Add</button></div></div>
- <div class="card"><b>Your data</b><div class="mu" style="margin:6px 0 10px">Stored in this browser only. Clearing cookies and site data deletes it, so download a backup file now and then. Last backup: <b>${bkTxt()}</b></div><div class="row" style="flex-wrap:wrap"><button class="p" onclick="dlBackup()">Download backup file</button><button onclick="S.set.bk=iso(new Date());save();showText('Backup',JSON.stringify(S))">Copy as text</button><button onclick="showText('CSV for spreadsheets',csv())">Export CSV</button><button onclick="impForm()">Restore</button><button class="d" onclick="rst()">Reset all</button></div></div><div class="mu">Zeyrio Spend v1.11</div>`}
+ <div class="card"><b>Your data</b><div class="mu" style="margin:6px 0 10px">Stored in this browser only. Clearing cookies and site data deletes it, so download a backup file now and then. Last backup: <b>${bkTxt()}</b></div><div class="row" style="flex-wrap:wrap"><button class="p" onclick="dlBackup()">Download backup file</button><button onclick="S.set.bk=iso(new Date());save();showText('Backup',JSON.stringify(S))">Copy as text</button><button onclick="showText('CSV for spreadsheets',csv())">Export CSV</button><button onclick="impForm()">Restore</button><button class="d" onclick="rst()">Reset all</button></div></div><div class="mu">Zeyrio Spend v1.14</div>`}
 let lt='l',lk='l';
 const r2=n=>Math.round(n*100)/100,paid=l=>r2(l.pay.reduce((a,p)=>a+p.amt,0)),bal=l=>r2(l.amt-paid(l)),isB=l=>l.k==='b';
 const owed=k=>r2(S.loans.filter(l=>(k==='b')===isB(l)&&bal(l)>0).reduce((a,l)=>a+bal(l),0));
@@ -146,7 +151,7 @@ function saveLoan(id){const w=$('#l_w').value.trim(),a=r2(parseFloat($('#l_a').v
  if(!w)return toast('Enter a name');if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');
  if(id){const l=S.loans.find(x=>x.id===id);if(a<paid(l))return toast('Amount is less than already repaid ('+fm(paid(l))+')');Object.assign(l,{who:w,amt:a,date:d,note:n})}else{S.loans.push({id:uid(),k:lk,who:w,amt:a,date:d,note:n,pay:[]});lt=lk}
  save();closeS();render();toast('Saved')}
-function delLoan(id){ask('Delete this entry and its repayments?',()=>{S.loans=S.loans.filter(x=>x.id!==id);save();closeS();render();toast('Deleted')})}
+function delLoan(id){ask('Delete this entry and its repayments?',()=>{snap();S.loans=S.loans.filter(x=>x.id!==id);save();closeS();render();toast('Deleted',1)})}
 function payForm(id){const l=S.loans.find(x=>x.id===id),b=bal(l),bw=isB(l);
  sheet(`<h2 style="margin-top:0">${esc(l.who)}</h2><div class="mu">${bw?'Borrowed':'Lent'} ${fm(l.amt)} · balance ${fm(b)}</div>
  ${b>0?`<label>${bw?'Amount you repaid':'Repayment amount'}</label><input id="p_a" type="number" inputmode="decimal" step="0.01" min="0" value="${b}"><label>Date</label><input id="p_d" type="date" value="${iso(new Date())}">`:'<div style="margin-top:10px">Fully repaid.</div>'}
@@ -155,7 +160,7 @@ function payForm(id){const l=S.loans.find(x=>x.id===id),b=bal(l),bw=isB(l);
 function savePay(id){const l=S.loans.find(x=>x.id===id),a=r2(parseFloat($('#p_a').value)),d=$('#p_d').value;
  if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');if(a>bal(l))return toast('More than the balance of '+fm(bal(l)));
  l.pay.push({id:uid(),amt:a,date:d});save();closeS();render();toast(bal(l)<=0?'Fully repaid':'Repayment saved')}
-function delPay(id,pid){const l=S.loans.find(x=>x.id===id);l.pay=l.pay.filter(p=>p.id!==pid);save();payForm(id);render()}
+function delPay(id,pid){const l=S.loans.find(x=>x.id===id);snap();l.pay=l.pay.filter(p=>p.id!==pid);save();payForm(id);render();toast('Repayment removed',1)}
 const cm=()=>iso(new Date()).slice(0,7);
 const savedAll=g=>r2(g.dep.reduce((a,d)=>a+d.amt,0)),savedIn=(g,m)=>r2(g.dep.filter(d=>d.date.startsWith(m)).reduce((a,d)=>a+d.amt,0));
 const monthSaved=m=>r2(S.sav.reduce((a,g)=>a+savedIn(g,m),0));
@@ -183,7 +188,7 @@ function goalForm(id){const g=S.sav.find(x=>x.id===id)||{name:'',cost:'',date:''
  <div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button>${id?`<button class="d" onclick="delGoal('${id}')">Delete</button>`:''}<div class="sp"></div><button class="p" onclick="saveGoal('${id||''}')">Save</button></div>`);setTimeout(()=>{const e=$('#g_n');!id&&e&&e.focus()},50)}
 function saveGoal(id){const n=$('#g_n').value.trim(),c=r2(parseFloat($('#g_c').value)),d=$('#g_d').value;if(!n)return toast('Enter a name');if(!(c>0))return toast('Enter the cost');
  if(id)Object.assign(S.sav.find(x=>x.id===id),{name:n,cost:c,date:d});else S.sav.push({id:uid(),name:n,cost:c,date:d,done:false,dep:[]});save();closeS();render();toast('Saved')}
-function delGoal(id){ask('Delete this goal and all its deposits? Your budget "left" for those months will go back up.',()=>{S.sav=S.sav.filter(x=>x.id!==id);Object.values(S.stg).forEach(o=>delete o[id]);save();closeS();render();toast('Goal deleted')})}
+function delGoal(id){ask('Delete this goal and all its deposits? Your budget "left" for those months will go back up.',()=>{snap();S.sav=S.sav.filter(x=>x.id!==id);Object.values(S.stg).forEach(o=>delete o[id]);save();closeS();render();toast('Goal deleted',1)})}
 function boughtGoal(id){const g=S.sav.find(x=>x.id===id);ask('Mark "'+g.name+'" as bought? It moves to Bought. This does not count as spending, since the money was already taken out of your budget.',()=>{g.done=true;save();render()},'Mark bought')}
 function reopenGoal(id){S.sav.find(x=>x.id===id).done=false;save();render()}
 function tgtForm(id){const g=S.sav.find(x=>x.id===id),ml=mLeft(g),rm=r2(g.cost-savedAll(g));
@@ -199,13 +204,18 @@ function saveDep(id,mode){const g=S.sav.find(x=>x.id===id),a=r2(parseFloat($('#d
  if(!(a>0))return toast('Enter an amount above 0');if(!d)return toast('Pick a date');if(w&&a>savedAll(g))return toast('You only have '+fm(savedAll(g))+' saved here');
  const go=()=>{g.dep.push({id:uid(),amt:w?-a:a,date:d,note:n});save();closeS();render();toast(w?'Withdrawn':'Saved')},av=avail(d.slice(0,7));
  if(!w&&av!==null&&a>av)ask('This is more than the '+fm(av)+' you have left that month. Save it anyway?',go,'Save anyway');else go()}
-function delDep(id,did){const g=S.sav.find(x=>x.id===id);g.dep=g.dep.filter(d=>d.id!==did);save();depForm(id,'d');render()}
+function delDep(id,did){const g=S.sav.find(x=>x.id===id);snap();g.dep=g.dep.filter(d=>d.id!==did);save();depForm(id,'d');render();toast('Entry removed',1)}
 const bkDays=()=>S.set.bk?Math.floor((P(iso(new Date()))-P(S.set.bk))/864e5):null;
 const bkTxt=()=>{const d=bkDays();return d===null?'never':d===0?'today':d===1?'yesterday':d+' days ago'};
 function dlBackup(){S.set.bk=iso(new Date());save();try{const u=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download='zeyrio-spend-backup-'+S.set.bk+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);toast('Backup file downloaded')}catch(e){toast('Could not download. Use Backup (copy text) instead')}render()}
 function impFile(el){const f=el.files&&el.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('#ti').value=r.result;doImp()};r.readAsText(f)}
-function catAdd(){const v=$('#nc').value.trim();if(!v||S.cats.some(c=>c.n.toLowerCase()===v.toLowerCase()))return toast('Enter a new category name');S.cats.push({n:v,c:PAL[S.cats.length%PAL.length]});save();render()}
-function catDel(i){if(S.cats.length<2)return toast('Keep at least one category');ask('Remove "'+S.cats[i].n+'"? Past entries keep their label.',()=>{S.cats.splice(i,1);save();render()},'Remove')}
+function catAdd(){const v=$('#nc').value.trim();if(!v||v.toLowerCase()==='income'||v==='_t'||S.cats.some(c=>c.n.toLowerCase()===v.toLowerCase()))return toast('Enter a new category name');S.cats.push({n:v,c:PAL[S.cats.length%PAL.length]});save();render()}
+function catRen(i){sheet(`<h2 style="margin-top:0">Rename category</h2><label>New name</label><input id="rn" value="${esc(S.cats[i].n)}" maxlength="24"><div class="mu" style="margin-top:6px">Past entries and budgets move to the new name.</div><div class="row" style="margin-top:14px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="doRen(${i})">Save</button></div>`);setTimeout(()=>{const e=$('#rn');e&&(e.focus(),e.select())},50)}
+function doRen(i){const o=S.cats[i].n,v=$('#rn').value.trim();if(!v)return toast('Enter a name');if(v===o)return closeS();
+ if(v.toLowerCase()==='income'||v==='_t'||S.cats.some((c,j)=>j!==i&&c.n.toLowerCase()===v.toLowerCase()))return toast('That name is already used');
+ snap();S.cats[i].n=v;S.tx.forEach(x=>{if(x.cat===o)x.cat=v});S.rec.forEach(x=>{if(x.cat===o)x.cat=v});Object.values(S.bud).forEach(b=>{if(b[o]!==undefined){b[v]=b[o];delete b[o]}});if(fc===o)fc=v;
+ save();closeS();render();toast('Renamed',1)}
+function catDel(i){if(S.cats.length<2)return toast('Keep at least one category');ask('Remove "'+S.cats[i].n+'"? Past entries keep their label.',()=>{snap();S.cats.splice(i,1);save();render();toast('Category removed',1)},'Remove')}
 function csv(){const q=v=>'"'+String(v).replace(/"/g,'""')+'"';return['date,type,category,amount,note',...S.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(x=>[x.date,x.type==='i'?'income':'expense',q(x.cat),x.amt,q(x.note)].join(','))].join('\n')}
 function showText(t,v){sheet(`<h2 style="margin-top:0">${t}</h2><div class="mu">Tap the box, select all, and copy.</div><textarea id="tt" rows="8" readonly style="margin-top:8px">${esc(v)}</textarea><div class="row" style="margin-top:12px"><button class="p" onclick="$('#tt').select();document.execCommand('copy');toast('Copied')">Copy</button><div class="sp"></div><button onclick="closeS()">Close</button></div>`)}
 function impForm(){sheet(`<h2 style="margin-top:0">Restore backup</h2><div class="mu">Choose a backup file you downloaded, or paste the text you copied.</div><input type="file" accept=".json,application/json" onchange="impFile(this)" style="margin-top:8px"><textarea id="ti" rows="8" style="margin-top:8px"></textarea><div class="row" style="margin-top:12px"><button onclick="closeS()">Cancel</button><div class="sp"></div><button class="p" onclick="doImp()">Restore</button></div>`)}
